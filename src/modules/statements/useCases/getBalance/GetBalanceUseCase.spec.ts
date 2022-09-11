@@ -1,89 +1,64 @@
-import { InMemoryUsersRepository } from "../../../users/repositories/in-memory/InMemoryUsersRepository"
-import { CreateUserUseCase } from "../../../users/useCases/createUser/CreateUserUseCase"
-import { ICreateUserDTO } from "../../../users/useCases/createUser/ICreateUserDTO"
-import { InMemoryStatementsRepository } from "../../repositories/in-memory/InMemoryStatementsRepository"
-import { CreateStatementUseCase } from "../createStatement/CreateStatementUseCase"
-import { ICreateStatementDTO } from "../createStatement/ICreateStatementDTO"
-import { GetBalanceError } from "./GetBalanceError"
-import { GetBalanceUseCase } from "./GetBalanceUseCase"
+import { InMemoryStatementsRepository } from "../../repositories/in-memory/InMemoryStatementsRepository";
+import { InMemoryUsersRepository } from "../../../users/repositories/in-memory/InMemoryUsersRepository";
+import { CreateUserUseCase } from "../../../users/useCases/createUser/CreateUserUseCase";
+import { GetBalanceUseCase } from "./GetBalanceUseCase";
+import { CreateStatementUseCase } from "../createStatement/CreateStatementUseCase";
+import { AppError } from "../../../../shared/errors/AppError";
+import { OperationType } from "../../entities/Statement";
 
-let inMemoryUsersRespository: InMemoryUsersRepository
-let createUserUseCase: CreateUserUseCase
-let inMemoryStatementsRepository: InMemoryStatementsRepository
-let createStatementUseCase: CreateStatementUseCase
-let getBalanceUseCase: GetBalanceUseCase
+describe('Get Balance', () => {
+  let inMemoryUsersRepository: InMemoryUsersRepository;
+  let inMemoryStatementsRepository: InMemoryStatementsRepository;
+  let createUserUseCase: CreateUserUseCase;
+  let getBalanceUseCase: GetBalanceUseCase;
+  let createStatementUseCase: CreateStatementUseCase;
 
-enum OperationType {
-    DEPOSIT = 'deposit',
-    WITHDRAW = 'withdraw',
-  }
+  beforeEach(() => {
+    inMemoryUsersRepository = new InMemoryUsersRepository();
+    inMemoryStatementsRepository = new InMemoryStatementsRepository();
+    createUserUseCase = new CreateUserUseCase(
+      inMemoryUsersRepository,
+    );
+    createStatementUseCase = new CreateStatementUseCase(
+      inMemoryUsersRepository,
+      inMemoryStatementsRepository,
+    );
+    getBalanceUseCase = new GetBalanceUseCase(
+      inMemoryStatementsRepository,
+      inMemoryUsersRepository,
+    );
+  });
 
-describe("Get Balance", () => {
-    beforeEach(() => {
-        inMemoryUsersRespository = new InMemoryUsersRepository()
-        inMemoryStatementsRepository = new InMemoryStatementsRepository()
-        createUserUseCase = new CreateUserUseCase(inMemoryUsersRespository)
-        createStatementUseCase = new CreateStatementUseCase(inMemoryUsersRespository,inMemoryStatementsRepository)
-        getBalanceUseCase = new GetBalanceUseCase(inMemoryStatementsRepository,inMemoryUsersRespository)
-    })
+  it('should not be able get balance if the user does not exist', async () => {
+    expect(async () => {
+      await getBalanceUseCase.execute({ user_id: '123' });
+    }).rejects.toBeInstanceOf(AppError);
+  });
 
-    it("Should be able to get the balance from a user", async () => {
-        const user: ICreateUserDTO= {
-            name: "User10 test",
-            email: "user10@test.com",
-            password: "123" 
-        }
+  it('should be able to get list with all operations and balance by user id', async () => {
+    const userCreated = await createUserUseCase.execute({
+      name: 'lucas',
+      email: 'lucas@email.com',
+      password: '1234'
+    });
 
-        const userCreated = await createUserUseCase.execute(user)
+    await createStatementUseCase.execute({
+      user_id: userCreated.id,
+      type: OperationType.DEPOSIT,
+      amount: 100,
+      description: 'first deposit',
+    });
 
-        const user_id = String(userCreated.id)
+    await createStatementUseCase.execute({
+      user_id: userCreated.id,
+      type: OperationType.WITHDRAW,
+      amount: 50,
+      description: 'first withdraw',
+    });
 
-        const statement1: ICreateStatementDTO = {
-            user_id: user_id,
-            description: "Test description",
-            amount: 100,
-            type: OperationType.DEPOSIT
-        }
+    const balance = await getBalanceUseCase.execute({ user_id: userCreated.id });
 
-        await createStatementUseCase.execute(statement1)
-
-        const statement2: ICreateStatementDTO = {
-            user_id: user_id,
-            description: "Test2 description",
-            amount: 50,
-            type: OperationType.WITHDRAW
-        }
-
-        await createStatementUseCase.execute(statement2)
-
-        const balance = await getBalanceUseCase.execute({user_id: user_id})
-
-        expect(balance).toHaveProperty("balance")
-        expect(balance.balance).toEqual(50)
-    })
-
-    it("Should not be able to get the balance from a nonexisting user", async () => {
-        const user: ICreateUserDTO= {
-            name: "User11 test",
-            email: "user11@test.com",
-            password: "123" 
-        }
-
-        const userCreated = await createUserUseCase.execute(user)
-
-        //const user_id = String(userCreated.id)
-
-        const statement1: ICreateStatementDTO = {
-            user_id: userCreated.id as string,
-            description: "Test description",
-            amount: 100,
-            type: OperationType.DEPOSIT
-        }
-
-        await createStatementUseCase.execute(statement1)
-        
-        expect(async () => {
-            await getBalanceUseCase.execute({ user_id: "ID errada" })
-        }).rejects.toBeInstanceOf(GetBalanceError)
-    })
+    expect(balance.statement.length).toEqual(2);
+    expect(balance.balance).toEqual(50);
+  });
 })

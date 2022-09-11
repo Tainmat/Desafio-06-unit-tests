@@ -1,42 +1,57 @@
-import { CreateUserError } from "./CreateUserError";
+import { AppError } from '../../../../shared/errors/AppError';
+import { InMemoryUsersRepository } from '../../repositories/in-memory/InMemoryUsersRepository';
+import { CreateUserUseCase } from './CreateUserUseCase';
 
-import { CreateUserUseCase } from "./CreateUserUseCase"
-import { InMemoryUsersRepository } from "../../repositories/in-memory/InMemoryUsersRepository"
-import { ICreateUserDTO } from "./ICreateUserDTO";
+describe('Create User', () => {
+  let createUserUseCase: CreateUserUseCase;
+  let inMemoryUsersRepository: InMemoryUsersRepository;
 
-let createUserUseCase: CreateUserUseCase
-let inMemoryUsersRepository: InMemoryUsersRepository
+  beforeEach(() => {
+    inMemoryUsersRepository = new InMemoryUsersRepository();
+    createUserUseCase = new CreateUserUseCase(
+      inMemoryUsersRepository,
+    );
+  });
 
-describe("Create User", () => {
+  it('should be able to create a new user', async () => {
+    const user = {
+      name: 'lucas',
+      email: 'lucas@email.com',
+      password: '1234'
+    };
 
-    beforeEach(() => {
-        inMemoryUsersRepository = new InMemoryUsersRepository()
-        createUserUseCase = new CreateUserUseCase(inMemoryUsersRepository)
-    })
+    await createUserUseCase.execute({
+      name: user.name,
+      email: user.email,
+      password: user.password,
+    });
 
-    it("Should be able to create a new user", async () => {
-        const user: ICreateUserDTO = {
-            name: "User1 test",
-            email: "user1@test.com",
-            password: "123"
-        }
+    const userCreated = await inMemoryUsersRepository.findByEmail(
+      user.email,
+    );
 
-        const userCreated = await createUserUseCase.execute(user)
+    expect(userCreated).toHaveProperty('id');
+  });
 
-        expect(userCreated).toHaveProperty("id")
-    })
+  it('should not be able to create a new user with email exists', async () => {
+    expect(async () => {
+      const user = {
+        name: 'lucas',
+        email: 'lucas@email.com',
+        password: '1234'
+      };
 
-    it("Should not be able to create a new user with existing email", () => {
-        const user: ICreateUserDTO = {
-            name: "User2 test",
-            email: "user2@test.com",
-            password: "123"
-        }
-        
-        expect(async () => {
-            await createUserUseCase.execute(user)
+      await createUserUseCase.execute({
+        name: user.name,
+        email: user.email,
+        password: user.password
+      });
 
-            await createUserUseCase.execute(user)
-        }).rejects.toBeInstanceOf(CreateUserError)
-    })
-})
+      await createUserUseCase.execute({
+        name: user.name,
+        email: user.email,
+        password: user.password
+      });
+    }).rejects.toBeInstanceOf(AppError);
+  });
+});

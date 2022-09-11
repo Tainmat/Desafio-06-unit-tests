@@ -1,91 +1,96 @@
-import { InMemoryUsersRepository } from "../../../users/repositories/in-memory/InMemoryUsersRepository"
-import { CreateUserUseCase } from "../../../users/useCases/createUser/CreateUserUseCase"
-import { ICreateUserDTO } from "../../../users/useCases/createUser/ICreateUserDTO"
-import { InMemoryStatementsRepository } from "../../repositories/in-memory/InMemoryStatementsRepository"
-import { CreateStatementError } from "./CreateStatementError"
-import { CreateStatementUseCase } from "./CreateStatementUseCase"
-import { ICreateStatementDTO } from "./ICreateStatementDTO"
+import { InMemoryStatementsRepository } from "../../repositories/in-memory/InMemoryStatementsRepository";
+import { InMemoryUsersRepository } from "../../../users/repositories/in-memory/InMemoryUsersRepository";
+import { CreateUserUseCase } from "../../../users/useCases/createUser/CreateUserUseCase";
+import { CreateStatementUseCase } from "./CreateStatementUseCase";
+import { OperationType } from "../../entities/Statement";
+import { AppError } from "../../../../shared/errors/AppError";
 
-let inMemoryUsersRespository: InMemoryUsersRepository
-let createUserUseCase: CreateUserUseCase
-let inMemoryStatementsRepository: InMemoryStatementsRepository
-let createStatementUseCase: CreateStatementUseCase
 
-enum OperationType {
-    DEPOSIT = 'deposit',
-    WITHDRAW = 'withdraw',
+describe('Create Statement', () => {
+  let inMemoryUsersRepository: InMemoryUsersRepository;
+  let inMemoryStatementsRepository: InMemoryStatementsRepository;
+  let createUserUseCase: CreateUserUseCase;
+  let createStatementUseCase: CreateStatementUseCase;
+
+  beforeEach(() => {
+    inMemoryUsersRepository = new InMemoryUsersRepository();
+    inMemoryStatementsRepository = new InMemoryStatementsRepository();
+    createUserUseCase = new CreateUserUseCase(
+      inMemoryUsersRepository,
+    );
+    createStatementUseCase = new CreateStatementUseCase(
+      inMemoryUsersRepository,
+      inMemoryStatementsRepository,
+    );
+  });
+
+  const user = {
+    name: 'lucas',
+    email: 'lucas@email.com',
+    password: '1234'
   }
 
-describe("Create Statement", () => {
-    beforeEach(() => {
-        inMemoryUsersRespository = new InMemoryUsersRepository()
-        createUserUseCase = new CreateUserUseCase(inMemoryUsersRespository)
-        inMemoryStatementsRepository = new InMemoryStatementsRepository()
-        createStatementUseCase = new CreateStatementUseCase(inMemoryUsersRespository,inMemoryStatementsRepository)
-    })
+  it('should be able to create a new withdrawal', async () => {
+    const userCreated = await createUserUseCase.execute(user);
 
-    it("Should be able to create a deposit", async () => {
-        const user: ICreateUserDTO = {
-            name: "User7 test",
-            email: "user7@test.com",
-            password: "123" 
-        }
+    await createStatementUseCase.execute({
+      user_id: userCreated.id,
+      type: OperationType.DEPOSIT,
+      amount: 100,
+      description: 'first deposit',
+    });
 
-        const userCreated = await createUserUseCase.execute(user)
-        // user_id = userCreated.id as string
+    const statement = await inMemoryStatementsRepository.create({
+      user_id: userCreated.id,
+      type: OperationType.WITHDRAW,
+      amount: 50,
+      description: 'first withdrawal',
+    });
 
-        const statement: ICreateStatementDTO = {
-            user_id: userCreated.id as string,
-            description: "Test description",
-            amount: 100,
-            type: OperationType.DEPOSIT
-        } 
+    expect(statement).toHaveProperty('id');
+  });
 
-        const statementDone = await createStatementUseCase.execute(statement)
+  it('should not be able to create a new withdrawal with insufficient amount', async () => {
+    expect(async () => {
+      const userCreated = await createUserUseCase.execute(user);
 
-        expect(statementDone).toHaveProperty("id")
-    })
+      await createStatementUseCase.execute({
+        user_id: userCreated.id,
+        type: OperationType.DEPOSIT,
+        amount: 50,
+        description: 'first deposit',
+      });
 
-    it("Should not be able to create a withdraw due to insufficient funds", async () => {
-        const user: ICreateUserDTO = {
-            name: "User8 test",
-            email: "user8@test.com",
-            password: "123" 
-        }
+      const statement = await inMemoryStatementsRepository.create({
+        user_id: userCreated.id,
+        type: OperationType.WITHDRAW,
+        amount: 100,
+        description: 'first withdrawal',
+      });
+    }).rejects.toBeInstanceOf(AppError);
+  });
 
-        const userCreated = await createUserUseCase.execute(user)
-        const user_id = userCreated.id as string
+  it('should be able to create a new deposit', async () => {
+    const userCreated = await createUserUseCase.execute(user);
 
-        const statement: ICreateStatementDTO = {
-            user_id: user_id,
-            description: "Test description",
-            amount: 100,
-            type: OperationType.WITHDRAW
-        } 
+    const statement = await createStatementUseCase.execute({
+      user_id: userCreated.id,
+      type: OperationType.DEPOSIT,
+      amount: 100,
+      description: 'first deposit',
+    });
 
-        expect(async () => {
-            await createStatementUseCase.execute(statement)
-        }).rejects.toBeInstanceOf(CreateStatementError.InsufficientFunds)
-    })
+    expect(statement).toHaveProperty('id');
+  });
 
-    it("Should not be able to create a deposit with a non existing user_id", async () => {
-        const user: ICreateUserDTO = {
-            name: "User9 test",
-            email: "user9@test.com",
-            password: "123" 
-        }
-
-        await createUserUseCase.execute(user)
-
-        const statement: ICreateStatementDTO = {
-            user_id: "ID errada",
-            description: "Test description",
-            amount: 100,
-            type: OperationType.DEPOSIT
-        } 
-
-        expect(async () => {
-            await createStatementUseCase.execute(statement)
-        }).rejects.toBeInstanceOf(CreateStatementError.UserNotFound)
-    })
-})
+  it('should not be possible to perform the operations if the user does not exist', async () => {
+    expect(async () => {
+      await createStatementUseCase.execute({
+        user_id: '123456',
+        type: OperationType.DEPOSIT,
+        amount: 50,
+        description: 'first deposit',
+      });
+    }).rejects.toBeInstanceOf(AppError);
+  });
+});
